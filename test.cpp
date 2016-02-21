@@ -9,8 +9,12 @@
 
 const char** pExtensions;
 int nExtensions;
+
 VkInstance instance = nullptr;
 VkDevice device = nullptr;
+VkPhysicalDeviceMemoryProperties memory;
+VkQueue queue;
+VkFormat depthFormat;
 
 VkResult createInstance() {
   // find extensions required by window
@@ -37,7 +41,7 @@ VkResult createDevice() {
   error = vkEnumeratePhysicalDevices(instance, &nGPUs, &gpus[0]);
   if (error) return error;
 
-  // find first supported device (TODO find best)
+  // find first supported device (TODO find best, or better yet, use multiple)
   for (VkPhysicalDevice& gpu : gpus) {
     // find number of queues on this gpu
     uint32_t nQueues;
@@ -55,7 +59,7 @@ VkResult createDevice() {
 
       // TODO this always fails on intel linux drivers as far as I can tell      
 //    if (glfwGetPhysicalDevicePresentationSupport(instance, gpu, index)) {
-
+      // hopefully this works with glfw instead
       if (queues[index].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
         printf("Queue %u supported!\n", index);
         // set up queue parameters
@@ -78,17 +82,31 @@ VkResult createDevice() {
         deviceInfo.ppEnabledExtensionNames = extensions;
 
         // create the device
-        return vkCreateDevice(gpu, &deviceInfo, nullptr, &device);
+        error = vkCreateDevice(gpu, &deviceInfo, nullptr, &device);
+        if (error) return error;
+
+        // find the memory properties for this gpu
+        vkGetPhysicalDeviceMemoryProperties(gpu, &memory);
         
-        // TODO MemoryProperties, Queue, DepthFormat etc
+        // get the queue requested previously
+        vkGetDeviceQueue(device, index, 0, &queue);
+        
+        // make sure D24S8 is supported, TODO find best available format
+        VkFormatProperties formatProps;
+        vkGetPhysicalDeviceFormatProperties(gpu, VK_FORMAT_D24_UNORM_S8_UINT, &formatProps);
+        if (!(formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
+          return VkResult::VK_ERROR_FORMAT_NOT_SUPPORTED;
+        // device is ready to use
+        return VkResult::VK_SUCCESS;
       } else printf("Queue %u unsupported\n", index);
     }
   }
 
-  // no suitable device was found
+  // no suitable device was found, this error is descriptive enough
   return VkResult::VK_ERROR_DEVICE_LOST;
 }
 
+// eventually this will do something other than append a newline
 void log(const char* msg) {
   printf("%s\n", msg);
 }
@@ -99,12 +117,13 @@ void shutdown() {
   if (instance) { log("Destroying vulkan instance"); vkDestroyInstance(instance, nullptr); }
 }
 
+// basically assert that does cleanup and prints message
 void check(bool condition, const char* msg) {
   if (condition != true) {
     fprintf(stderr, "Error: %s\n", msg);
     shutdown();
     exit(EXIT_FAILURE);
-  ;}
+  }
 }
 
 void initialize() {
