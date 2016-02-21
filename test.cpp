@@ -7,24 +7,26 @@
 // TODO cmake will make glfw linking way easier
 // TODO put all these structs and processes into helper functions/classes
 
-const char** pExtensions;
-int nExtensions;
-
 VkInstance instance = nullptr;
 VkDevice device = nullptr;
 VkPhysicalDeviceMemoryProperties memory;
 VkQueue queue;
 VkFormat depthFormat;
+GLFWwindow* window = nullptr;
+VkSurfaceKHR surface;
 
 VkResult createInstance() {
   // find extensions required by window
-  pExtensions = glfwGetRequiredInstanceExtensions(&nExtensions);
-  
+  const char* extensions[] = { "VK_KHR_xcb_surface" };
+  // glfw helper function doesnt work...?
+
+  // AppInfo is ignored for simplicity, not needed
+
   // set up vulkan parameters
   VkInstanceCreateInfo info{};
   info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-  info.ppEnabledExtensionNames = pExtensions;
-  info.enabledExtensionCount = (uint32_t)nExtensions;
+  info.ppEnabledExtensionNames = extensions;
+  info.enabledExtensionCount = 1;
 
   // create vulkan instance
   return vkCreateInstance(&info, nullptr, &instance);
@@ -111,7 +113,27 @@ void log(const char* msg) {
   printf("%s\n", msg);
 }
 
+void glfwError(int id, const char* msg) {
+  fprintf(stderr, "GLFW error %d: %s\n", id, msg);
+}
+
+VkResult createWindow(const char* title, int width, int height) {
+  // initialize GLFW
+  glfwSetErrorCallback(&glfwError);
+  if (!glfwInit()) return VkResult::VK_ERROR_INCOMPATIBLE_DISPLAY_KHR;
+
+  // create window for vulkan
+  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+  window = glfwCreateWindow(width, height, title, nullptr, nullptr);
+  if (!window) return VkResult::VK_ERROR_INCOMPATIBLE_DISPLAY_KHR;
+
+  // get vulkan surface
+  return glfwCreateWindowSurface(instance, window, nullptr, &surface);
+}
+
 void shutdown() {
+  // todo destroy swapchain/surface
+  glfwTerminate(); // also destroys window
   // destroy things before instance
   if (device) { log("Destroying device"); vkDestroyDevice(device, nullptr); }
   if (instance) { log("Destroying vulkan instance"); vkDestroyInstance(instance, nullptr); }
@@ -131,10 +153,17 @@ void initialize() {
   check(!createInstance(), "failed to create vulkan instance");
   log("Creating device");
   check(!createDevice(), "failed to create device");
+  log("Creating window");
+  check(!createWindow("test", 640, 480), "failed to create window");
 }
 
 int main(int argc, char* argv[]) {
   initialize();
+
+  while (!glfwWindowShouldClose(window)) {
+    glfwPollEvents();
+//  todo swapchain
+  }
 
   shutdown();
 }
